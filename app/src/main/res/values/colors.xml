@@ -15,4 +15,7 @@
     <color name="accent_purple">#8E2A87</color>
     <color name="field_border">#D9D9D9</color>
     <color name="warning_amber">#B26A00</color>
+
+    <!--  Report screen background, behind the white report card.  -->
+    <color name="report_screen_bg">#F0F0F2</color>
 </resources>

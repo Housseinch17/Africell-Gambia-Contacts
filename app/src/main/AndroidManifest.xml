@@ -26,6 +26,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--  Report screen shown after a bulk "Apply" finishes writing numbers.  -->
+        <activity
+            android:name=".ReportActivity"
+            android:exported="false"
+            android:label="@string/report_title" />
     </application>
 
 </manifest>

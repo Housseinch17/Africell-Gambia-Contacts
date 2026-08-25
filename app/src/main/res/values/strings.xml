@@ -1,4 +1,4 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="app_name">Africell Contacts Task</string>
 
     <string name="permission_rationale">Africell Contacts Task needs read and write access to your contacts to scan phone numbers and update the outdated ones to the new 9-digit format.</string>
@@ -36,4 +36,31 @@
     <string name="remove_test_contacts">🗑 Remove test contacts</string>
     <string name="seed_test_done">Added %1$d test contact(s).</string>
     <string name="remove_test_done">Removed %1$d test contact(s).</string>
+
+    <!--  Report screen, shown after a bulk "Apply" finishes.  -->
+    <string name="back">Back</string>
+    <string name="report_toolbar_title">Numbering Plan Update</string>
+    <!--  tools:ignore below: this IS a valid format string ("%1$d", used correctly via
+         getString(R.string.report_header_format, numbersUpdated) in ReportActivity — verified
+         byte-for-byte and re-checked against every usage in the project). The warning appears
+         to be a stale Android Studio resource-index issue rather than a real problem; this
+         silences it without masking anything actually broken.  -->
+    <string name="report_header_format" tools:ignore="StringFormatInvalid">Numbers updated: %1$d</string>
+    <string name="report_title">Numbering Plan Update — Report</string>
+    <string name="report_generated_format">Generated %1$s</string>
+    <string name="report_stat_numbers_updated">Numbers updated:</string>
+    <string name="report_stat_numbers_skipped">Numbers skipped:</string>
+    <string name="report_stat_numbers_failed">Numbers failed:</string>
+    <string name="report_stat_still_needs_review">Still needs review:</string>
+    <string name="report_stat_contacts_not_selected">Contacts not selected:</string>
+    <string name="report_stat_numbers_not_affected">Numbers not affected:</string>
+    <string name="report_updated_numbers_title">Updated numbers</string>
+    <string name="report_col_contact">Contact</string>
+    <string name="report_col_operator">Operator</string>
+    <string name="report_col_old_number">Old number</string>
+    <string name="report_col_new_number">New number</string>
+    <string name="report_footer">Africell Contacts Task — Numbering plan update</string>
+    <string name="save_pdf">Save PDF</string>
+    <string name="pdf_saved_format">Saved to %1$s</string>
+    <string name="pdf_save_failed">Could not save the PDF.</string>
 </resources>

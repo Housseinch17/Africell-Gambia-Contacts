@@ -29,6 +29,9 @@ import com.example.africellcontactstask.add_testing.TestDataSeeder
 import com.example.africellcontactstask.add_testing.TestDataSeeder.removeTestContacts
 import com.example.africellcontactstask.add_testing.TestDataSeeder.seedTestContacts
 import com.google.android.material.tabs.TabLayout
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
     // The full, unfiltered source of truth for every contact loaded from the device.
@@ -489,30 +492,61 @@ class MainActivity : AppCompatActivity() {
     /**
      * Writes every pending contact's suggested number back to Contacts off the main thread
      * (a synchronous ContentResolver.update() per contact, run on the UI thread, risked
-     * jank/ANR for a large selection) and only touches the adapter/UI once, back on the
-     * main thread, after all the I/O is done.
+     * jank/ANR for a large selection), then — instead of just a toast — opens ReportActivity
+     * with a full summary of what happened plus a row for every number actually changed.
      */
     private fun runFixSelected(pending: List<Contact>) {
         setLoading(true, getString(R.string.updating_contacts))
+
+        // Snapshots taken before any mutation below changes which bucket a contact falls
+        // into. applyResolvedNumber() re-evaluates each fixed contact's new (now correctly
+        // formatted) number, which re-classifies it as UNCHANGEABLE — so unchangeableContacts()
+        // must be read now, not after the loop, or "Numbers not affected" would end up counting
+        // the numbers this very run just fixed.
+        val notSelectedCount = changeableContacts().count { !it.selected }
+        val numbersNotAffectedCount = unchangeableContacts().size
+
         Thread {
             var updated = 0
+            var skipped = 0
+            var failed = 0
+            val rows = ArrayList<UpdatedNumberRow>()
+
             for (contact in pending) {
-                val newNumber = contact.suggestedNumber ?: continue
+                val newNumber = contact.suggestedNumber
+                if (newNumber == null) {
+                    skipped++
+                    continue
+                }
+                val oldNumber = contact.phoneNumber
                 if (writeNumberToContact(contact.id, newNumber)) {
+                    val operator = contact.carrier ?: "-"
                     applyResolvedNumber(contact, newNumber)
+                    rows.add(UpdatedNumberRow(contact.name, operator, oldNumber, newNumber))
                     updated++
+                } else {
+                    failed++
                 }
             }
 
             runOnUiThread {
                 syncSelectAllCheckboxState()
-                Toast.makeText(
-                    this,
-                    getString(R.string.fix_selected_done, updated),
-                    Toast.LENGTH_LONG
-                ).show()
                 updateSummary()
                 setLoading(false)
+
+                val generatedAt = SimpleDateFormat("d MMM yyyy, HH:mm", Locale.getDefault()).format(Date())
+                startActivity(
+                    Intent(this, ReportActivity::class.java).apply {
+                        putExtra(ReportActivity.EXTRA_NUMBERS_UPDATED, updated)
+                        putExtra(ReportActivity.EXTRA_NUMBERS_SKIPPED, skipped)
+                        putExtra(ReportActivity.EXTRA_NUMBERS_FAILED, failed)
+                        putExtra(ReportActivity.EXTRA_STILL_NEEDS_REVIEW, errorContacts().count { !it.resolved })
+                        putExtra(ReportActivity.EXTRA_CONTACTS_NOT_SELECTED, notSelectedCount)
+                        putExtra(ReportActivity.EXTRA_NUMBERS_NOT_AFFECTED, numbersNotAffectedCount)
+                        putExtra(ReportActivity.EXTRA_GENERATED_AT, generatedAt)
+                        putExtra(ReportActivity.EXTRA_ROWS, rows)
+                    }
+                )
             }
         }.start()
     }
