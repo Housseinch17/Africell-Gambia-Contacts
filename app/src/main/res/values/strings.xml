@@ -1,0 +1,33 @@
+<resources>
+    <string name="app_name">Africell Contacts Task</string>
+
+    <string name="permission_rationale">This app needs access to your contacts to migrate phone numbers to the new 9-digit format.</string>
+    <string name="grant_permission">Grant permission</string>
+    <string name="loading_contacts">Reading contacts…</string>
+    <string name="status_changeable">CHANGEABLE</string>
+    <string name="status_error">ERROR</string>
+    <string name="status_unchangeable">UNCHANGEABLE</string>
+    <string name="suggested_number_format">→ %1$s</string>
+    <string name="apply_fix">Apply fix</string>
+    <string name="keep_as_is">Keep as is</string>
+    <string name="fix_all">Fix all numbers</string>
+    <string name="fix_all_confirm_title">Fix all numbers?</string>
+    <string name="fix_all_confirm_message">This will update every changeable contact\'s number to its suggested 9-digit format. This can\'t be undone automatically.</string>
+    <string name="fix_all_done">Updated %1$d contact(s).</string>
+    <string name="dialog_title">Confirm number</string>
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="select_all">Select all</string>
+    <string name="fix_selected">Fix selected numbers</string>
+    <string name="fix_selected_format">Fix selected (%1$d)</string>
+    <string name="fix_selected_confirm_title">Fix selected numbers?</string>
+    <string name="fix_selected_confirm_message">This will update every selected contact\'s number to its suggested 9-digit format. This can\'t be undone automatically.</string>
+    <string name="fix_selected_done">Updated %1$d contact(s).</string>
+    <string name="fix_selected_none">Select at least one contact first.</string>
+
+
+    <string name="seed_test_contacts">🧪 Add 25 test contacts</string>
+    <string name="remove_test_contacts">🗑 Remove test contacts</string>
+    <string name="seed_test_done">Added %1$d test contact(s).</string>
+    <string name="remove_test_done">Removed %1$d test contact(s).</string>
+</resources>
