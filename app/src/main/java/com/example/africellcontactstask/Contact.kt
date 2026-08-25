@@ -15,5 +15,6 @@ data class Contact(
     var reason: String? = null,          // short human-readable explanation, set for ERROR and UNCHANGEABLE
     var resolved: Boolean = false,        // set true once the user applies/enters a fix or picks "keep as is"
     var selected: Boolean = false,       // checkbox state, only meaningful for CHANGEABLE
-    var carrier: String? = null          // "Africell" / "Qcell" / "Comium" when known, else null
+    var carrier: String? = null,         // "Africell" / "Qcell" / "Comium" when known, else null
+    var isEditing: Boolean = false       // true while this ERROR contact's inline edit card is open
 )

@@ -81,9 +81,10 @@
                 android:textSize="11sp"
                 android:textStyle="bold" />
         </LinearLayout>
-        <!--  Only visible for contacts with status = ERROR: manual "Apply fix" / "Keep as is"
-                 controls. CHANGEABLE contacts use the checkbox above instead (individual or
-                 "select all"), applied in bulk via the "Fix selected numbers" button.  -->
+        <!--  Only visible for contacts with status = ERROR and not yet resolved: "Leave As Is" /
+                 "Fix Number" controls. Tapping "Fix Number" swaps this row out for editLayout
+                 below, in place, on the same card. CHANGEABLE contacts use the checkbox above
+                 instead (individual or "select all"), applied in bulk via the "Apply" button.  -->
         <LinearLayout
             android:id="@+id/updateActionsLayout"
             android:layout_width="match_parent"
@@ -93,22 +94,125 @@
             android:visibility="gone">
 
             <Button
-                android:id="@+id/applyFixButton"
-                style="?attr/borderlessButtonStyle"
+                android:id="@+id/keepAsIsButton"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginEnd="6dp"
                 android:layout_weight="1"
-                android:text="@string/apply_fix" />
+                android:background="@drawable/pill_button_outline"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:paddingTop="10dp"
+                android:paddingBottom="10dp"
+                android:stateListAnimator="@null"
+                android:text="@string/keep_as_is"
+                android:textAllCaps="false"
+                android:textColor="@color/accent_purple" />
 
             <Button
-                android:id="@+id/keepAsIsButton"
-                style="?attr/borderlessButtonStyle"
+                android:id="@+id/applyFixButton"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="6dp"
                 android:layout_weight="1"
-                android:text="@string/keep_as_is" />
+                android:background="@drawable/pill_button_filled"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:paddingTop="10dp"
+                android:paddingBottom="10dp"
+                android:stateListAnimator="@null"
+                android:text="@string/apply_fix"
+                android:textAllCaps="false"
+                android:textColor="@color/white" />
+        </LinearLayout>
+
+        <!--  Inline edit state — replaces updateActionsLayout above once "Fix Number" is
+                 tapped, in the same card (no dialog). Editable field pre-filled with the
+                 current/suggested number, a live re-classification line that updates on every
+                 keystroke, then Cancel / Save.  -->
+        <LinearLayout
+            android:id="@+id/editLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+
+                <EditText
+                    android:id="@+id/editNumberInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/edit_number_field_bg"
+                    android:imeOptions="actionDone"
+                    android:inputType="phone"
+                    android:paddingStart="14dp"
+                    android:paddingTop="12dp"
+                    android:paddingEnd="40dp"
+                    android:paddingBottom="12dp"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp" />
+
+                <ImageView
+                    android:id="@+id/clearEditNumberButton"
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:layout_gravity="center_vertical|end"
+                    android:layout_marginEnd="10dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/clear_number"
+                    android:src="@drawable/ic_clear_circle" />
+            </FrameLayout>
+
+            <TextView
+                android:id="@+id/editLiveReasonText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/cancelEditButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/pill_button_outline"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:paddingTop="10dp"
+                    android:paddingBottom="10dp"
+                    android:stateListAnimator="@null"
+                    android:text="@string/cancel"
+                    android:textAllCaps="false"
+                    android:textColor="@color/accent_purple" />
+
+                <Button
+                    android:id="@+id/saveEditButton"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/pill_button_filled"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:paddingTop="10dp"
+                    android:paddingBottom="10dp"
+                    android:stateListAnimator="@null"
+                    android:text="@string/save"
+                    android:textAllCaps="false"
+                    android:textColor="@color/white" />
+            </LinearLayout>
         </LinearLayout>
     </LinearLayout>
 </androidx.cardview.widget.CardView>

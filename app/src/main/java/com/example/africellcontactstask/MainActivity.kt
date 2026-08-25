@@ -9,13 +9,10 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.ContactsContract
 import android.provider.Settings
-import android.text.Editable
-import android.text.TextWatcher
 import android.util.Log
 import android.view.View
 import android.widget.Button
 import android.widget.CheckBox
-import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -178,11 +175,9 @@ class MainActivity : AppCompatActivity() {
         recyclerView.layoutManager = LinearLayoutManager(this)
         adapter = ContactAdapter(
             displayedContacts,
-            onApplyFixClicked = { contact, _ -> showConfirmDialog(contact) },
-            onKeepAsIsClicked = { contact, _ -> keepAsIs(contact) },
-            onSelectionToggled = { contact, _, isChecked ->
-                onContactSelectionToggled(contact, isChecked)
-            },
+            onSaveNumberClicked = { contact, newNumber -> saveEditedNumber(contact, newNumber) },
+            onKeepAsIsClicked = { contact -> keepAsIs(contact) },
+            onSelectionToggled = { contact, isChecked -> onContactSelectionToggled(contact, isChecked) },
         )
         recyclerView.adapter = adapter
 
@@ -420,96 +415,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * "Apply fix" action for one ERROR contact: shows WHY it was flagged (e.g. "Only 5
-     * digits after +220 — not a recognized format...") right below the title, then lets
-     * the user type the correct number in manually and save it.
+     * "Save" action from an ERROR contact's inline edit card (see ContactAdapter — the
+     * editable field, live re-classification, and Cancel/Save controls all live in the card
+     * itself now, not a popup dialog). Writes the typed number back to the phone's real
+     * contact record in place, then exits edit mode either way — on failure the card just
+     * returns to its normal "Leave As Is" / "Fix Number" state so the user can retry.
      */
-    private fun showConfirmDialog(contact: Contact) {
-        val density = resources.displayMetrics.density
-        fun dp(value: Int) = (value * density).toInt()
-
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(8), dp(24), 0)
-        }
-
-        if (!contact.reason.isNullOrBlank()) {
-            // A solid error-colored chip with white text, rather than gray text on
-            // whatever the dialog's own background happens to be — guarantees strong
-            // contrast (and reads clearly as "this is why it's flagged") regardless of
-            // light/dark theme.
-            val reasonView = TextView(this).apply {
-                text = contact.reason
-                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.white))
-                setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.status_error_bg))
-                textSize = 13f
-                setPadding(dp(10), dp(8), dp(10), dp(8))
+    private fun saveEditedNumber(contact: Contact, newNumber: String) {
+        runWithWriteContactsPermission {
+            if (writeNumberToContact(contact.id, newNumber)) {
+                applyResolvedNumber(contact, newNumber)
+            } else {
+                contact.isEditing = false
+                Toast.makeText(this, "Could not update this contact.", Toast.LENGTH_SHORT).show()
             }
-            val reasonMargin = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(12) }
-            container.addView(reasonView, reasonMargin)
+            updateSummary()
         }
-
-        val input = EditText(this)
-        input.setText(contact.suggestedNumber ?: contact.phoneNumber)
-        container.addView(input)
-
-        // Live re-classification: re-runs PhoneValidator on every keystroke so the user can
-        // see right away whether their edit resolves the issue, instead of finding out only
-        // after tapping Save.
-        val liveStatusView = TextView(this).apply {
-            textSize = 12f
-            setTypeface(typeface, Typeface.BOLD)
-            setPadding(0, dp(10), 0, 0)
-        }
-        container.addView(liveStatusView)
-
-        fun updateLiveStatus(text: String) {
-            val trimmed = text.trim()
-            if (trimmed.isEmpty()) {
-                liveStatusView.text = ""
-                return
-            }
-            val result = PhoneValidator.evaluate(trimmed)
-            val (label, colorRes) = when (result.status) {
-                ContactStatus.CHANGEABLE -> {
-                    val carrierSuffix = result.carrierName?.let { " ($it)" } ?: ""
-                    "✓ Will update to ${result.suggestedNumber}$carrierSuffix" to R.color.status_changeable_bg
-                }
-                ContactStatus.ERROR ->
-                    (result.reason ?: "Still not a recognized format.") to R.color.status_error_bg
-                ContactStatus.UNCHANGEABLE ->
-                    (result.reason ?: "No change needed.") to R.color.status_unchangeable_bg
-            }
-            liveStatusView.text = label
-            liveStatusView.setTextColor(ContextCompat.getColor(this@MainActivity, colorRes))
-        }
-        updateLiveStatus(input.text.toString())
-        input.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-            override fun afterTextChanged(s: Editable?) = updateLiveStatus(s?.toString().orEmpty())
-        })
-
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.dialog_title))
-            .setView(container)
-            .setPositiveButton(R.string.save) { _, _ ->
-                val newNumber = input.text.toString().trim()
-                runWithWriteContactsPermission {
-                    if (writeNumberToContact(contact.id, newNumber)) {
-                        applyResolvedNumber(contact, newNumber)
-                        updateSummary()
-                    } else {
-                        Toast.makeText(this, "Could not update this contact.", Toast.LENGTH_SHORT)
-                            .show()
-                    }
-                }
-            }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
     }
 
     /** "Keep as is" action for an ERROR contact: no change to the number, just marks it as reviewed. */
@@ -617,6 +538,7 @@ class MainActivity : AppCompatActivity() {
         contact.carrier = result.carrierName
         contact.resolved = result.status != ContactStatus.ERROR
         contact.selected = false
+        contact.isEditing = false
     }
 
     /** Writes the corrected number back to the phone's contact using ContactsContract. */

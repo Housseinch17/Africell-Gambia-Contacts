@@ -10,4 +10,9 @@
     <color name="card_background">#FFFFFF</color>
     <color name="text_primary">#212121</color>
     <color name="text_secondary">#424242</color>
+
+    <!--  Inline "Fix number" card: pill buttons and the editable field's border.  -->
+    <color name="accent_purple">#8E2A87</color>
+    <color name="field_border">#D9D9D9</color>
+    <color name="warning_amber">#B26A00</color>
 </resources>
