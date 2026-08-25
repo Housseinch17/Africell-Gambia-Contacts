@@ -5,14 +5,7 @@
     android:layout_height="match_parent"
     android:orientation="vertical">
 
-    <androidx.appcompat.widget.Toolbar
-        android:id="@+id/toolbar"
-        android:layout_width="match_parent"
-        android:layout_height="?attr/actionBarSize"
-        android:background="?attr/colorPrimary"
-        android:title="@string/app_name"
-        android:titleTextColor="#FFFFFF" />
-    <!--  Shown when READ_CONTACTS permission has not been granted yet  -->
+    <!--  Shown when READ_CONTACTS and/or WRITE_CONTACTS permission has not been granted yet  -->
     <LinearLayout
         android:id="@+id/permissionLayout"
         android:layout_width="match_parent"
@@ -34,16 +27,32 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/grant_permission" />
+
+        <!--  Only shown after the permission request is denied — deep-links to this app's
+                 page in the system Settings so the user can still grant it manually.  -->
+        <Button
+            android:id="@+id/openSettingsButton"
+            style="?attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/open_settings"
+            android:textAllCaps="false"
+            android:visibility="gone" />
     </LinearLayout>
-    <!--  Simple summary bar: counts per status  -->
-    <TextView
-        android:id="@+id/summaryText"
+    <!--  Step 3, as three tabs: tapping one filters the list below to just that status.
+             Tab labels are updated with live counts in MainActivity.updateSummary(). This
+             sits right at the top (replacing the old summary bar) so it's the first thing
+             visible once contacts are loaded.  -->
+    <com.google.android.material.tabs.TabLayout
+        android:id="@+id/statusTabLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:background="#EEEEEE"
-        android:padding="12dp"
-        android:textColor="@color/text_secondary"
-        android:textSize="13sp" />
+        app:tabGravity="fill"
+        app:tabMode="fixed"
+        app:tabIndicatorColor="@color/status_changeable_bg"
+        app:tabSelectedTextColor="@color/white"
+        app:tabTextColor="@color/white_40" />
 
     <LinearLayout
         android:id="@+id/changeableActionsLayout"
@@ -89,7 +98,7 @@
             android:layout_height="wrap_content"
             android:layout_marginEnd="6dp"
             android:layout_weight="1"
-            android:text="@string/seed_test_contacts"
+            android:text="Add test contacts"
             android:textAllCaps="false" />
 
         <Button

@@ -55,7 +55,14 @@ object PhoneValidator {
     data class MigrationResult(
         val status: ContactStatus,
         val suggestedNumber: String? = null,
-        val reason: String? = null
+        val reason: String? = null,
+        // Which of the three operators this number belongs to, whenever that can be
+        // determined confidently — set for CHANGEABLE, for UNCHANGEABLE numbers already in
+        // the new format, AND for the ERROR case where a 9-digit number's prefix names an
+        // operator even though its remaining digits don't match that operator's blocks.
+        // Left null wherever no operator can be pinned down (wrong length, non-numeric,
+        // unaffected/unfamiliar number, unrecognized 9-digit prefix).
+        val carrierName: String? = null
     )
 
     private enum class Style { PLUS, ZERO_ZERO, BARE_CC, LOCAL }
@@ -127,7 +134,12 @@ object PhoneValidator {
             )
 
         val suggested = "+$COUNTRY_CODE${carrier.newPrefix}$local7"
-        return MigrationResult(ContactStatus.CHANGEABLE, suggestedNumber = suggested, reason = "${carrier.name} — old format")
+        return MigrationResult(
+            ContactStatus.CHANGEABLE,
+            suggestedNumber = suggested,
+            reason = "${carrier.name} — old format",
+            carrierName = carrier.name
+        )
     }
 
     /** A 9-digit local part: either already correctly migrated, inconsistent (ERROR), or just not a Gambia prefix at all. */
@@ -143,11 +155,18 @@ object PhoneValidator {
         val consistentCarrier = matchOldCarrier(remainder7)
 
         return if (consistentCarrier == prefixCarrier) {
-            MigrationResult(ContactStatus.UNCHANGEABLE, reason = "Already in the new format (${prefixCarrier.name}).")
+            MigrationResult(
+                ContactStatus.UNCHANGEABLE,
+                reason = "Already in the new format (${prefixCarrier.name}).",
+                carrierName = prefixCarrier.name
+            )
         } else {
             MigrationResult(
                 ContactStatus.ERROR,
-                reason = "Starts with ${prefixCarrier.name}'s prefix (${prefixCarrier.newPrefix}) but the remaining digits don't match ${prefixCarrier.name}'s number blocks."
+                reason = "Starts with ${prefixCarrier.name}'s prefix (${prefixCarrier.newPrefix}) but the remaining digits don't match ${prefixCarrier.name}'s number blocks.",
+                // The prefix still names an operator even though the number is flagged —
+                // worth showing, since it's the most likely intended carrier.
+                carrierName = prefixCarrier.name
             )
         }
     }

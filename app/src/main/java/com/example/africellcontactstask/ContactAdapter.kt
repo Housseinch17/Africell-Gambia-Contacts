@@ -40,7 +40,9 @@ class ContactAdapter(
         val context = holder.itemView.context
 
         holder.name.text = contact.name
-        holder.number.text = contact.phoneNumber
+        holder.number.text = contact.carrier?.let { carrier ->
+            context.getString(R.string.number_with_carrier_format, contact.phoneNumber, carrier)
+        } ?: contact.phoneNumber
         holder.suggested.visibility = View.GONE
         holder.reason.visibility = View.GONE
         holder.updateActions.visibility = View.GONE
@@ -84,10 +86,5 @@ class ContactAdapter(
 
         holder.applyFixButton.setOnClickListener { onApplyFixClicked(contact, holder.bindingAdapterPosition) }
         holder.keepAsIsButton.setOnClickListener { onKeepAsIsClicked(contact, holder.bindingAdapterPosition) }
-    }
-
-    fun updateItem(position: Int, contact: Contact) {
-        items[position] = contact
-        notifyItemChanged(position)
     }
 }

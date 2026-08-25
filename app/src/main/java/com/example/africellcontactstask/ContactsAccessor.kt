@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.database.Cursor
 import android.provider.ContactsContract
+import android.util.Log
 import androidx.core.content.ContextCompat
 
 /**
@@ -68,6 +69,7 @@ object ContactsAccessor {
             }
         }
 
+        Log.d("MyTag","result: $result")
         return result
     }
 }

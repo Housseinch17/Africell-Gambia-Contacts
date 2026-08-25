@@ -5,6 +5,7 @@ import android.content.ContentResolver
 import android.content.OperationApplicationException
 import android.os.RemoteException
 import android.provider.ContactsContract
+import android.util.Log
 
 /**
  * TESTING ONLY — not part of the Contact Updater feature itself.
@@ -193,6 +194,7 @@ object TestDataSeeder {
                 // skip this one, keep seeding the rest
             }
         }
+        Log.d("MyTag","inserted: $inserted")
         return inserted
     }
 

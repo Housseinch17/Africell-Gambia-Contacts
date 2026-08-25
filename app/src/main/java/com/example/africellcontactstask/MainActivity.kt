@@ -2,10 +2,16 @@ package com.example.africellcontactstask
 
 import android.Manifest
 import android.content.ContentValues
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Typeface
+import android.net.Uri
 import android.os.Bundle
 import android.provider.ContactsContract
+import android.provider.Settings
+import android.text.Editable
+import android.text.TextWatcher
+import android.util.Log
 import android.view.View
 import android.widget.Button
 import android.widget.CheckBox
@@ -22,36 +28,32 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.example.africellcontactstask.add_testing.TestDataSeeder
 import com.example.africellcontactstask.add_testing.TestDataSeeder.removeTestContacts
 import com.example.africellcontactstask.add_testing.TestDataSeeder.seedTestContacts
+import com.google.android.material.tabs.TabLayout
 
 class MainActivity : AppCompatActivity() {
+    // The full, unfiltered source of truth for every contact loaded from the device.
     private val contacts = mutableListOf<Contact>()
+
+    // Step 3, as a tab-filtered view: only the contacts matching `currentFilter`, in the
+    // same order they appear in `contacts`. The adapter wraps THIS list, not `contacts` —
+    // switching tabs just rebuilds it and re-notifies the adapter.
+    private val displayedContacts = mutableListOf<Contact>()
+    private var currentFilter: ContactStatus = ContactStatus.CHANGEABLE
+
     private lateinit var adapter: ContactAdapter
-    private lateinit var summaryText: TextView
+    private lateinit var statusTabLayout: TabLayout
     private lateinit var changeableActionsLayout: View
     private lateinit var selectAllCheckbox: CheckBox
     private lateinit var fixSelectedButton: Button
 
-    private val requestPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) {
-                findViewById<View>(R.id.permissionLayout).visibility = View.GONE
-                loadContacts()
-            } else {
-                Toast.makeText(
-                    this,
-                    "Contacts permission is required to run the migration.",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
-        }
-
-    // WRITE_CONTACTS is requested lazily, right before the first thing that actually needs
-    // to write (a test-data seed/remove, an "Apply fix", or a "Fix selected numbers") rather
-    // than up front, so the permission prompt only appears when it's actually relevant.
-    // `pendingWriteAction` holds whatever write was waiting on the permission so it can run
-    // immediately once the user grants it, instead of silently failing and making them retry.
+    // WRITE_CONTACTS is also requested lazily right before the first thing that actually
+    // needs to write, as a defensive fallback in case permission was somehow revoked (e.g.
+    // from system Settings) after the app's own onboarding already granted both permissions
+    // together. `pendingWriteAction` holds whatever write was waiting on the permission so
+    // it can run immediately once the user grants it, instead of silently failing.
     private var pendingWriteAction: (() -> Unit)? = null
 
     private val writeContactsPermissionLauncher =
@@ -68,6 +70,74 @@ class MainActivity : AppCompatActivity() {
             pendingWriteAction = null
         }
 
+    // Contacts permission: the app needs BOTH read (to scan) and write (to update numbers)
+    // access, requested together in a single system dialog — on first launch, and again by
+    // the test-data seed/remove buttons if permission was never granted. Requesting both up
+    // front means "Fix number" / "Fix selected numbers" never hit a surprise second prompt.
+    private var pendingPermissionAction: (() -> Unit)? = null
+
+    private val contactsPermissionsLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { results ->
+            setPermissionEntryPointsEnabled(true)
+            if (results.values.all { it }) {
+                findViewById<View>(R.id.permissionLayout).visibility = View.GONE
+                pendingPermissionAction?.invoke()
+            } else {
+                showPermissionDenied()
+            }
+            pendingPermissionAction = null
+        }
+
+    private fun hasContactsPermissions(): Boolean {
+        val hasRead = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) ==
+            PackageManager.PERMISSION_GRANTED
+        val hasWrite = ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_CONTACTS) ==
+            PackageManager.PERMISSION_GRANTED
+        return hasRead && hasWrite
+    }
+
+    private fun runWithContactsPermissions(action: () -> Unit) {
+        if (hasContactsPermissions()) {
+            action()
+        } else {
+            pendingPermissionAction = action
+            // Disabled right away rather than only once the granted action actually starts
+            // (setLoading() does that part) — there's a brief gap between calling launch()
+            // and the system dialog actually taking over the screen, and a fast repeat tap
+            // in that gap used to queue a SECOND permission request/pending action, which
+            // could make e.g. seedTestContacts() run more than once for what was really a
+            // single grant.
+            setPermissionEntryPointsEnabled(false)
+            contactsPermissionsLauncher.launch(
+                arrayOf(Manifest.permission.READ_CONTACTS, Manifest.permission.WRITE_CONTACTS)
+            )
+        }
+    }
+
+    /** Enables/disables every button that can kick off a permission request (see above). */
+    private fun setPermissionEntryPointsEnabled(enabled: Boolean) {
+        findViewById<View>(R.id.grantPermissionButton).isEnabled = enabled
+        findViewById<Button>(R.id.seedTestContactsButton).isEnabled = enabled
+        findViewById<Button>(R.id.removeTestContactsButton).isEnabled = enabled
+    }
+
+    /**
+     * Shown after the user denies the read+write request: swaps the rationale text to the
+     * "denied" phrasing, reveals a button that deep-links straight to this app's page in the
+     * system Settings so the permission can still be granted manually, and gives immediate
+     * toast feedback.
+     */
+    private fun showPermissionDenied() {
+        findViewById<TextView>(R.id.permissionText).text =
+            getString(R.string.permission_denied_rationale)
+        findViewById<View>(R.id.openSettingsButton).visibility = View.VISIBLE
+        Toast.makeText(
+            this,
+            "Contacts read & write permission are both required to scan and update numbers.",
+            Toast.LENGTH_LONG
+        ).show()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -80,10 +150,26 @@ class MainActivity : AppCompatActivity() {
 
         // Wire up all views FIRST — bindSelectAllCheckbox() and the adapter below both
         // touch these, so they must be assigned before anything else runs.
-        summaryText = findViewById(R.id.summaryText)
+        statusTabLayout = findViewById(R.id.statusTabLayout)
         changeableActionsLayout = findViewById(R.id.changeableActionsLayout)
         selectAllCheckbox = findViewById(R.id.selectAllCheckbox)
         fixSelectedButton = findViewById(R.id.fixSelectedButton)
+
+        // Three tabs, one per status. Each tab's tag holds the ContactStatus it filters to,
+        // so onTabSelected doesn't need to guess from position. Labels (with live counts)
+        // are filled in by updateSummary() once contacts are loaded.
+        statusTabLayout.addTab(statusTabLayout.newTab().setTag(ContactStatus.CHANGEABLE).setText(R.string.status_changeable))
+        statusTabLayout.addTab(statusTabLayout.newTab().setTag(ContactStatus.ERROR).setText(R.string.status_error))
+        statusTabLayout.addTab(statusTabLayout.newTab().setTag(ContactStatus.UNCHANGEABLE).setText(R.string.status_unchangeable))
+        statusTabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+            override fun onTabSelected(tab: TabLayout.Tab) {
+                currentFilter = tab.tag as ContactStatus
+                refreshDisplayedContacts()
+                updateChangeableActionsVisibility()
+            }
+            override fun onTabUnselected(tab: TabLayout.Tab) {}
+            override fun onTabReselected(tab: TabLayout.Tab) {}
+        })
 
         bindSelectAllCheckbox()
         fixSelectedButton.setOnClickListener { confirmFixSelected() }
@@ -91,32 +177,42 @@ class MainActivity : AppCompatActivity() {
         val recyclerView = findViewById<RecyclerView>(R.id.contactsRecyclerView)
         recyclerView.layoutManager = LinearLayoutManager(this)
         adapter = ContactAdapter(
-            contacts,
-            onApplyFixClicked = { contact, position -> showConfirmDialog(contact, position) },
-            onKeepAsIsClicked = { contact, position -> keepAsIs(contact, position) },
+            displayedContacts,
+            onApplyFixClicked = { contact, _ -> showConfirmDialog(contact) },
+            onKeepAsIsClicked = { contact, _ -> keepAsIs(contact) },
             onSelectionToggled = { contact, _, isChecked ->
                 onContactSelectionToggled(contact, isChecked)
             },
         )
         recyclerView.adapter = adapter
 
-        findViewById<Button>(R.id.seedTestContactsButton).setOnClickListener {
-            runWithWriteContactsPermission { seedTestContacts() }
+        // Label reads the real dataset size directly from TestDataSeeder.TEST_CONTACTS
+        // rather than a hardcoded count in strings.xml, so it can't silently go stale
+        // again if the dataset is ever expanded (as it was, 25 -> 55, without this).
+        findViewById<Button>(R.id.seedTestContactsButton).apply {
+            text = getString(R.string.seed_test_contacts_format, TestDataSeeder.TEST_CONTACTS.size)
+            setOnClickListener { runWithContactsPermissions { seedTestContacts() } }
         }
         findViewById<Button>(R.id.removeTestContactsButton).setOnClickListener {
-            runWithWriteContactsPermission { removeTestContacts() }
+            runWithContactsPermissions { removeTestContacts() }
         }
 
         findViewById<View>(R.id.grantPermissionButton).setOnClickListener {
-            requestPermissionLauncher.launch(Manifest.permission.READ_CONTACTS)
+            runWithContactsPermissions { loadContacts() }
+        }
+        findViewById<View>(R.id.openSettingsButton).setOnClickListener {
+            startActivity(
+                Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.fromParts("package", packageName, null)
+                )
+            )
         }
 
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            findViewById<View>(R.id.permissionLayout).visibility = View.VISIBLE
-        } else {
+        if (hasContactsPermissions()) {
             loadContacts()
+        } else {
+            findViewById<View>(R.id.permissionLayout).visibility = View.VISIBLE
         }
     }
 
@@ -167,7 +263,11 @@ class MainActivity : AppCompatActivity() {
                     phoneNumber = raw.number,
                     status = result.status,
                     suggestedNumber = result.suggestedNumber,
-                    reason = result.reason
+                    reason = result.reason,
+                    carrier = result.carrierName,
+                    // "Will be updated" contacts are selected by default — the user
+                    // unselects the ones they don't want, rather than opting each one in.
+                    selected = result.status == ContactStatus.CHANGEABLE
                 )
             }
 
@@ -178,24 +278,41 @@ class MainActivity : AppCompatActivity() {
                 // Fresh data means fresh selection state.
                 syncSelectAllCheckboxState()
 
-                adapter.notifyDataSetChanged()
+                // Refreshes displayedContacts (for the current tab) and notifies the adapter.
                 updateSummary()
                 setLoading(false)
             }
         }.start()
     }
 
-    /** Shows/hides the loading spinner and toggles the contact list + selection bar accordingly. */
-    private fun setLoading(loading: Boolean) {
+    /**
+     * Shows/hides the loading spinner and toggles the contact list + selection bar accordingly.
+     * `message` lets each call site say what it's actually doing (reading, updating, adding
+     * test data, ...) instead of the label always defaulting to "Reading contacts…" regardless
+     * of which operation is actually running.
+     *
+     * Also disables the seed/remove test-data buttons for the duration: they were previously
+     * still tappable while a seed/remove was already running, so a fast double-tap (or tapping
+     * one while the other was mid-flight) could kick off a second overlapping write — e.g. two
+     * concurrent seedTestContacts() calls each inserting their own copy of the dataset. Since
+     * every write path routes through here, disabling in one place covers all of them.
+     */
+    private fun setLoading(loading: Boolean, message: String? = null) {
         findViewById<View>(R.id.contactsProgressBar).visibility =
             if (loading) View.VISIBLE else View.GONE
-        findViewById<View>(R.id.loadingText).visibility =
-            if (loading) View.VISIBLE else View.GONE
+        findViewById<TextView>(R.id.loadingText).apply {
+            visibility = if (loading) View.VISIBLE else View.GONE
+            if (loading) {
+                text = message ?: getString(R.string.loading_contacts)
+            }
+        }
         findViewById<RecyclerView>(R.id.contactsRecyclerView).visibility =
             if (loading) View.GONE else View.VISIBLE
         if (loading) {
             changeableActionsLayout.visibility = View.GONE
         }
+        findViewById<Button>(R.id.seedTestContactsButton).isEnabled = !loading
+        findViewById<Button>(R.id.removeTestContactsButton).isEnabled = !loading
     }
 
     /**
@@ -218,8 +335,15 @@ class MainActivity : AppCompatActivity() {
     // --- TESTING ONLY below: seeds/removes the curated TestDataSeeder.TEST_CONTACTS set ---
 
     private fun seedTestContacts() {
-        setLoading(true)
+        Log.d("MyTag","seedTestContacts: called")
+        setLoading(true, getString(R.string.adding_test_contacts))
         Thread {
+            // Clears out any previously-seeded "TEST " contacts first, so this is always
+            // idempotent — exactly TEST_CONTACTS.size contacts after this call, never a
+            // pile that keeps growing if it ends up running more than once (an earlier
+            // permission-request race let that happen; this is a second, independent
+            // safety net for it regardless of cause).
+            removeTestContacts(contentResolver)
             val count = seedTestContacts(contentResolver)
             runOnUiThread {
                 Toast.makeText(this, getString(R.string.seed_test_done, count), Toast.LENGTH_LONG)
@@ -230,7 +354,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun removeTestContacts() {
-        setLoading(true)
+        setLoading(true, getString(R.string.removing_test_contacts))
         Thread {
             val count = removeTestContacts(contentResolver)
             runOnUiThread {
@@ -258,11 +382,28 @@ class MainActivity : AppCompatActivity() {
         val changeable = changeableContacts().size
         val error = errorContacts().count { !it.resolved }
         val unchangeable = unchangeableContacts().size
-        summaryText.text =
-            "Changeable: $changeable   Error: $error   Unchangeable: $unchangeable   Total: ${contacts.size}"
 
-        changeableActionsLayout.visibility = if (changeable > 0) View.VISIBLE else View.GONE
+        statusTabLayout.getTabAt(0)?.text = getString(R.string.tab_changeable_format, changeable)
+        statusTabLayout.getTabAt(1)?.text = getString(R.string.tab_error_format, error)
+        statusTabLayout.getTabAt(2)?.text = getString(R.string.tab_unchangeable_format, unchangeable)
+
+        refreshDisplayedContacts()
+        updateChangeableActionsVisibility()
         updateFixSelectedButton()
+    }
+
+    /** Rebuilds `displayedContacts` from `contacts` for whichever tab is currently selected. */
+    private fun refreshDisplayedContacts() {
+        displayedContacts.clear()
+        displayedContacts.addAll(contacts.filter { it.status == currentFilter })
+        adapter.notifyDataSetChanged()
+    }
+
+    /** The checkbox/"Fix selected" bar only makes sense on the Changeable tab. */
+    private fun updateChangeableActionsVisibility() {
+        changeableActionsLayout.visibility =
+            if (currentFilter == ContactStatus.CHANGEABLE && changeableContacts().isNotEmpty())
+                View.VISIBLE else View.GONE
     }
 
     /** Called whenever a row's checkbox is toggled (CHANGEABLE contacts only). */
@@ -283,7 +424,7 @@ class MainActivity : AppCompatActivity() {
      * digits after +220 — not a recognized format...") right below the title, then lets
      * the user type the correct number in manually and save it.
      */
-    private fun showConfirmDialog(contact: Contact, position: Int) {
+    private fun showConfirmDialog(contact: Contact) {
         val density = resources.displayMetrics.density
         fun dp(value: Int) = (value * density).toInt()
 
@@ -315,6 +456,43 @@ class MainActivity : AppCompatActivity() {
         input.setText(contact.suggestedNumber ?: contact.phoneNumber)
         container.addView(input)
 
+        // Live re-classification: re-runs PhoneValidator on every keystroke so the user can
+        // see right away whether their edit resolves the issue, instead of finding out only
+        // after tapping Save.
+        val liveStatusView = TextView(this).apply {
+            textSize = 12f
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, dp(10), 0, 0)
+        }
+        container.addView(liveStatusView)
+
+        fun updateLiveStatus(text: String) {
+            val trimmed = text.trim()
+            if (trimmed.isEmpty()) {
+                liveStatusView.text = ""
+                return
+            }
+            val result = PhoneValidator.evaluate(trimmed)
+            val (label, colorRes) = when (result.status) {
+                ContactStatus.CHANGEABLE -> {
+                    val carrierSuffix = result.carrierName?.let { " ($it)" } ?: ""
+                    "✓ Will update to ${result.suggestedNumber}$carrierSuffix" to R.color.status_changeable_bg
+                }
+                ContactStatus.ERROR ->
+                    (result.reason ?: "Still not a recognized format.") to R.color.status_error_bg
+                ContactStatus.UNCHANGEABLE ->
+                    (result.reason ?: "No change needed.") to R.color.status_unchangeable_bg
+            }
+            liveStatusView.text = label
+            liveStatusView.setTextColor(ContextCompat.getColor(this@MainActivity, colorRes))
+        }
+        updateLiveStatus(input.text.toString())
+        input.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) = updateLiveStatus(s?.toString().orEmpty())
+        })
+
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.dialog_title))
             .setView(container)
@@ -322,7 +500,8 @@ class MainActivity : AppCompatActivity() {
                 val newNumber = input.text.toString().trim()
                 runWithWriteContactsPermission {
                     if (writeNumberToContact(contact.id, newNumber)) {
-                        applyResolvedNumber(contact, position, newNumber)
+                        applyResolvedNumber(contact, newNumber)
+                        updateSummary()
                     } else {
                         Toast.makeText(this, "Could not update this contact.", Toast.LENGTH_SHORT)
                             .show()
@@ -334,16 +513,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** "Keep as is" action for an ERROR contact: no change to the number, just marks it as reviewed. */
-    private fun keepAsIs(contact: Contact, position: Int) {
+    private fun keepAsIs(contact: Contact) {
         contact.resolved = true
-        adapter.updateItem(position, contact)
         updateSummary()
     }
 
     /** "Fix selected numbers": confirm, then apply every checked CHANGEABLE contact's suggestion in one go. */
     private fun confirmFixSelected() {
-        val pending = contacts.withIndex()
-            .filter { (_, c) -> c.status == ContactStatus.CHANGEABLE && c.selected }
+        val pending = contacts.filter { it.status == ContactStatus.CHANGEABLE && it.selected }
 
         if (pending.isEmpty()) {
             Toast.makeText(this, R.string.fix_selected_none, Toast.LENGTH_SHORT).show()
@@ -394,26 +571,23 @@ class MainActivity : AppCompatActivity() {
      * jank/ANR for a large selection) and only touches the adapter/UI once, back on the
      * main thread, after all the I/O is done.
      */
-    private fun runFixSelected(pending: List<IndexedValue<Contact>>) {
-        setLoading(true)
+    private fun runFixSelected(pending: List<Contact>) {
+        setLoading(true, getString(R.string.updating_contacts))
         Thread {
-            val successful = mutableListOf<Pair<IndexedValue<Contact>, String>>()
-            for (indexed in pending) {
-                val contact = indexed.value
+            var updated = 0
+            for (contact in pending) {
                 val newNumber = contact.suggestedNumber ?: continue
                 if (writeNumberToContact(contact.id, newNumber)) {
-                    successful.add(indexed to newNumber)
+                    applyResolvedNumber(contact, newNumber)
+                    updated++
                 }
             }
 
             runOnUiThread {
-                for ((indexed, newNumber) in successful) {
-                    applyResolvedNumber(indexed.value, indexed.index, newNumber)
-                }
                 syncSelectAllCheckboxState()
                 Toast.makeText(
                     this,
-                    getString(R.string.fix_selected_done, successful.size),
+                    getString(R.string.fix_selected_done, updated),
                     Toast.LENGTH_LONG
                 ).show()
                 updateSummary()
@@ -423,23 +597,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * Shared bookkeeping after a number has actually been written back to Contacts.
+     * Shared bookkeeping after a number has actually been written back to Contacts. Only
+     * mutates the Contact object itself — it's called both from the UI thread (a single
+     * "Apply fix") and from the background thread inside runFixSelected's loop, so it must
+     * NOT touch the adapter or any view directly. Every call site is responsible for
+     * calling updateSummary() afterward (on the UI thread) to refresh the tab-filtered list.
      *
      * `resolved` is only set once the new number is no longer classified as ERROR — if a
      * manually-typed fix is still ambiguous, the contact stays unresolved so "Apply fix" /
      * "Keep as is" remain visible and the user can correct it again, instead of the row
      * silently losing its action buttons while still flagged as an error.
      */
-    private fun applyResolvedNumber(contact: Contact, position: Int, newNumber: String) {
+    private fun applyResolvedNumber(contact: Contact, newNumber: String) {
         contact.phoneNumber = newNumber
         val result = PhoneValidator.evaluate(newNumber)
         contact.status = result.status
         contact.suggestedNumber = result.suggestedNumber
         contact.reason = result.reason
+        contact.carrier = result.carrierName
         contact.resolved = result.status != ContactStatus.ERROR
         contact.selected = false
-        adapter.updateItem(position, contact)
-        updateSummary()
     }
 
     /** Writes the corrected number back to the phone's contact using ContactsContract. */

@@ -1,15 +1,21 @@
 <resources>
     <string name="app_name">Africell Contacts Task</string>
 
-    <string name="permission_rationale">This app needs access to your contacts to migrate phone numbers to the new 9-digit format.</string>
+    <string name="permission_rationale">Africell Contacts Task needs read and write access to your contacts to scan phone numbers and update the outdated ones to the new 9-digit format.</string>
+    <string name="permission_denied_rationale">Contacts permission was denied. Africell Contacts Task needs read and write access to scan your contacts and update outdated phone numbers — you can still grant it from Settings.</string>
     <string name="grant_permission">Grant permission</string>
+    <string name="open_settings">Open Settings</string>
     <string name="loading_contacts">Reading contacts…</string>
-    <string name="status_changeable">CHANGEABLE</string>
-    <string name="status_error">ERROR</string>
-    <string name="status_unchangeable">UNCHANGEABLE</string>
+    <string name="updating_contacts">Updating contacts…</string>
+    <string name="adding_test_contacts">Adding test contacts…</string>
+    <string name="removing_test_contacts">Removing test contacts…</string>
+    <string name="status_changeable">TO UPDATE</string>
+    <string name="status_error">NEEDS REVIEW</string>
+    <string name="status_unchangeable">UNCHANGED</string>
     <string name="suggested_number_format">→ %1$s</string>
-    <string name="apply_fix">Apply fix</string>
-    <string name="keep_as_is">Keep as is</string>
+    <string name="number_with_carrier_format">%1$s  •  %2$s</string>
+    <string name="apply_fix">Fix number</string>
+    <string name="keep_as_is">Leave as is</string>
     <string name="dialog_title">Confirm number</string>
     <string name="save">Save</string>
     <string name="cancel">Cancel</string>
@@ -21,8 +27,11 @@
     <string name="fix_selected_done">Updated %1$d contact(s).</string>
     <string name="fix_selected_none">Select at least one contact first.</string>
 
+    <string name="tab_changeable_format">To update (%1$d)</string>
+    <string name="tab_error_format">Needs review (%1$d)</string>
+    <string name="tab_unchangeable_format">Unchanged (%1$d)</string>
 
-    <string name="seed_test_contacts">🧪 Add 25 test contacts</string>
+    <string name="seed_test_contacts_format">🧪 Add %1$d test contacts</string>
     <string name="remove_test_contacts">🗑 Remove test contacts</string>
     <string name="seed_test_done">Added %1$d test contact(s).</string>
     <string name="remove_test_done">Removed %1$d test contact(s).</string>
