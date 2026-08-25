@@ -81,7 +81,9 @@
                 android:textSize="11sp"
                 android:textStyle="bold" />
         </LinearLayout>
-        <!--  Only visible for contacts with status = CHANGEABLE (step 4/5 will extend this to ERROR)  -->
+        <!--  Only visible for contacts with status = ERROR: manual "Apply fix" / "Keep as is"
+                 controls. CHANGEABLE contacts use the checkbox above instead (individual or
+                 "select all"), applied in bulk via the "Fix selected numbers" button.  -->
         <LinearLayout
             android:id="@+id/updateActionsLayout"
             android:layout_width="match_parent"

@@ -3,12 +3,14 @@ package com.example.africellcontactstask
 import android.Manifest
 import android.content.ContentValues
 import android.content.pm.PackageManager
+import android.graphics.Typeface
 import android.os.Bundle
 import android.provider.ContactsContract
 import android.view.View
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
@@ -45,23 +47,25 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-    // --- TESTING ONLY: seeding/removing fake contacts needs WRITE_CONTACTS up front,
-    // requested separately from the READ_CONTACTS flow above. Remove along with
-    // TestDataSeeder.kt and its two buttons before shipping. ---
-    private var pendingTestAction: (() -> Unit)? = null
+    // WRITE_CONTACTS is requested lazily, right before the first thing that actually needs
+    // to write (a test-data seed/remove, an "Apply fix", or a "Fix selected numbers") rather
+    // than up front, so the permission prompt only appears when it's actually relevant.
+    // `pendingWriteAction` holds whatever write was waiting on the permission so it can run
+    // immediately once the user grants it, instead of silently failing and making them retry.
+    private var pendingWriteAction: (() -> Unit)? = null
 
     private val writeContactsPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) {
-                pendingTestAction?.invoke()
+                pendingWriteAction?.invoke()
             } else {
                 Toast.makeText(
                     this,
-                    "Contacts write permission is required for test data.",
+                    "Contacts write permission is required to save changes.",
                     Toast.LENGTH_LONG
                 ).show()
             }
-            pendingTestAction = null
+            pendingWriteAction = null
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -126,6 +130,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
+     * Keeps "Select all" in sync with the individual row checkboxes: checked only when every
+     * CHANGEABLE contact is currently selected, unchecked otherwise (including when the list
+     * is empty, or only partially selected). Rebinds the listener afterward without firing it,
+     * so this can be called freely without triggering bindSelectAllCheckbox()'s own logic.
+     */
+    private fun syncSelectAllCheckboxState() {
+        val changeable = changeableContacts()
+        val allSelected = changeable.isNotEmpty() && changeable.all { it.selected }
+        selectAllCheckbox.setOnCheckedChangeListener(null)
+        selectAllCheckbox.isChecked = allSelected
+        bindSelectAllCheckbox()
+    }
+
+    /**
      * STEP 1: Access all contacts — via the standalone ContactsAccessor (see that file).
      * STEP 2: Phone Validator — each RawContact is immediately run through PhoneValidator.
      *
@@ -157,11 +175,8 @@ class MainActivity : AppCompatActivity() {
                 contacts.clear()
                 contacts.addAll(loaded)
 
-                // Fresh data means fresh selection state — reset "select all" without
-                // firing its listener (which would try to mutate the new list mid-reset).
-                selectAllCheckbox.setOnCheckedChangeListener(null)
-                selectAllCheckbox.isChecked = false
-                bindSelectAllCheckbox()
+                // Fresh data means fresh selection state.
+                syncSelectAllCheckboxState()
 
                 adapter.notifyDataSetChanged()
                 updateSummary()
@@ -183,18 +198,24 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // --- TESTING ONLY below: seeds/removes the curated TestDataSeeder.TEST_CONTACTS set ---
-
+    /**
+     * Runs `action` immediately if WRITE_CONTACTS is already granted; otherwise requests it
+     * and runs `action` right after the user grants it (or shows a message and gives up if
+     * they deny it). Used for every code path that writes to Contacts: the test-data
+     * seed/remove buttons AND the real "Apply fix" / "Fix selected numbers" actions.
+     */
     private fun runWithWriteContactsPermission(action: () -> Unit) {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_CONTACTS)
             == PackageManager.PERMISSION_GRANTED
         ) {
             action()
         } else {
-            pendingTestAction = action
+            pendingWriteAction = action
             writeContactsPermissionLauncher.launch(Manifest.permission.WRITE_CONTACTS)
         }
     }
+
+    // --- TESTING ONLY below: seeds/removes the curated TestDataSeeder.TEST_CONTACTS set ---
 
     private fun seedTestContacts() {
         setLoading(true)
@@ -247,6 +268,7 @@ class MainActivity : AppCompatActivity() {
     /** Called whenever a row's checkbox is toggled (CHANGEABLE contacts only). */
     private fun onContactSelectionToggled(contact: Contact, isChecked: Boolean) {
         contact.selected = isChecked
+        syncSelectAllCheckboxState()
         updateFixSelectedButton()
     }
 
@@ -256,21 +278,55 @@ class MainActivity : AppCompatActivity() {
         fixSelectedButton.text = getString(R.string.fix_selected_format, selectedCount)
     }
 
-    /** "Apply fix" action for one ERROR contact: type the correct number in manually and save it. */
+    /**
+     * "Apply fix" action for one ERROR contact: shows WHY it was flagged (e.g. "Only 5
+     * digits after +220 — not a recognized format...") right below the title, then lets
+     * the user type the correct number in manually and save it.
+     */
     private fun showConfirmDialog(contact: Contact, position: Int) {
+        val density = resources.displayMetrics.density
+        fun dp(value: Int) = (value * density).toInt()
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(8), dp(24), 0)
+        }
+
+        if (!contact.reason.isNullOrBlank()) {
+            // A solid error-colored chip with white text, rather than gray text on
+            // whatever the dialog's own background happens to be — guarantees strong
+            // contrast (and reads clearly as "this is why it's flagged") regardless of
+            // light/dark theme.
+            val reasonView = TextView(this).apply {
+                text = contact.reason
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.white))
+                setBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.status_error_bg))
+                textSize = 13f
+                setPadding(dp(10), dp(8), dp(10), dp(8))
+            }
+            val reasonMargin = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(12) }
+            container.addView(reasonView, reasonMargin)
+        }
+
         val input = EditText(this)
         input.setText(contact.suggestedNumber ?: contact.phoneNumber)
+        container.addView(input)
 
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.dialog_title))
-            .setView(input)
+            .setView(container)
             .setPositiveButton(R.string.save) { _, _ ->
                 val newNumber = input.text.toString().trim()
-                if (writeNumberToContact(contact.id, newNumber)) {
-                    applyResolvedNumber(contact, position, newNumber)
-                } else {
-                    Toast.makeText(this, "Could not update this contact.", Toast.LENGTH_SHORT)
-                        .show()
+                runWithWriteContactsPermission {
+                    if (writeNumberToContact(contact.id, newNumber)) {
+                        applyResolvedNumber(contact, position, newNumber)
+                    } else {
+                        Toast.makeText(this, "Could not update this contact.", Toast.LENGTH_SHORT)
+                            .show()
+                    }
                 }
             }
             .setNegativeButton(R.string.cancel, null)
@@ -294,42 +350,93 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        // Built explicitly instead of relying on setTitle()/setMessage() — on this theme
+        // the dialog's default title and message text appearances rendered visually
+        // identical (same size/weight/color), making them hard to tell apart. A custom
+        // view guarantees the title reads as bold/larger/dark and the message as
+        // smaller/regular/gray, regardless of theme.
+        val density = resources.displayMetrics.density
+        fun dp(value: Int) = (value * density).toInt()
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(20), dp(24), dp(4))
+        }
+
+        val titleView = TextView(this).apply {
+            text = getString(R.string.fix_selected_confirm_title)
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.white))
+            textSize = 18f
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, 0, 0, dp(10))
+        }
+        container.addView(titleView)
+
+        val messageView = TextView(this).apply {
+            text = getString(R.string.fix_selected_confirm_message)
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.white))
+            textSize = 14f
+        }
+        container.addView(messageView)
+
         AlertDialog.Builder(this)
-            .setTitle(R.string.fix_selected_confirm_title)
-            .setMessage(R.string.fix_selected_confirm_message)
-            .setPositiveButton(R.string.save) { _, _ -> runFixSelected(pending) }
+            .setView(container)
+            .setPositiveButton(R.string.save) { _, _ ->
+                runWithWriteContactsPermission { runFixSelected(pending) }
+            }
             .setNegativeButton(R.string.cancel, null)
             .show()
     }
 
+    /**
+     * Writes every pending contact's suggested number back to Contacts off the main thread
+     * (a synchronous ContentResolver.update() per contact, run on the UI thread, risked
+     * jank/ANR for a large selection) and only touches the adapter/UI once, back on the
+     * main thread, after all the I/O is done.
+     */
     private fun runFixSelected(pending: List<IndexedValue<Contact>>) {
-        var updated = 0
-        for ((position, contact) in pending) {
-            val newNumber = contact.suggestedNumber ?: continue
-            if (writeNumberToContact(contact.id, newNumber)) {
-                applyResolvedNumber(contact, position, newNumber)
-                updated++
+        setLoading(true)
+        Thread {
+            val successful = mutableListOf<Pair<IndexedValue<Contact>, String>>()
+            for (indexed in pending) {
+                val contact = indexed.value
+                val newNumber = contact.suggestedNumber ?: continue
+                if (writeNumberToContact(contact.id, newNumber)) {
+                    successful.add(indexed to newNumber)
+                }
             }
-        }
 
-        // Reset "select all" now that its selected contacts have been resolved.
-        selectAllCheckbox.setOnCheckedChangeListener(null)
-        selectAllCheckbox.isChecked = false
-        bindSelectAllCheckbox()
-
-        Toast.makeText(this, getString(R.string.fix_selected_done, updated), Toast.LENGTH_LONG)
-            .show()
-        updateSummary()
+            runOnUiThread {
+                for ((indexed, newNumber) in successful) {
+                    applyResolvedNumber(indexed.value, indexed.index, newNumber)
+                }
+                syncSelectAllCheckboxState()
+                Toast.makeText(
+                    this,
+                    getString(R.string.fix_selected_done, successful.size),
+                    Toast.LENGTH_LONG
+                ).show()
+                updateSummary()
+                setLoading(false)
+            }
+        }.start()
     }
 
-    /** Shared bookkeeping after a number has actually been written back to Contacts. */
+    /**
+     * Shared bookkeeping after a number has actually been written back to Contacts.
+     *
+     * `resolved` is only set once the new number is no longer classified as ERROR — if a
+     * manually-typed fix is still ambiguous, the contact stays unresolved so "Apply fix" /
+     * "Keep as is" remain visible and the user can correct it again, instead of the row
+     * silently losing its action buttons while still flagged as an error.
+     */
     private fun applyResolvedNumber(contact: Contact, position: Int, newNumber: String) {
         contact.phoneNumber = newNumber
         val result = PhoneValidator.evaluate(newNumber)
         contact.status = result.status
         contact.suggestedNumber = result.suggestedNumber
         contact.reason = result.reason
-        contact.resolved = true
+        contact.resolved = result.status != ContactStatus.ERROR
         contact.selected = false
         adapter.updateItem(position, contact)
         updateSummary()
@@ -349,8 +456,9 @@ class MainActivity : AppCompatActivity() {
             )
             rowsUpdated > 0
         } catch (e: SecurityException) {
-            // WRITE_CONTACTS permission not granted
-            requestPermissionLauncher.launch(Manifest.permission.WRITE_CONTACTS)
+            // Shouldn't happen in practice: every call site routes through
+            // runWithWriteContactsPermission first, which ensures WRITE_CONTACTS is
+            // granted before this function is ever called.
             false
         }
     }

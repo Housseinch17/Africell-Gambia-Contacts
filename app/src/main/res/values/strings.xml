@@ -10,10 +10,6 @@
     <string name="suggested_number_format">→ %1$s</string>
     <string name="apply_fix">Apply fix</string>
     <string name="keep_as_is">Keep as is</string>
-    <string name="fix_all">Fix all numbers</string>
-    <string name="fix_all_confirm_title">Fix all numbers?</string>
-    <string name="fix_all_confirm_message">This will update every changeable contact\'s number to its suggested 9-digit format. This can\'t be undone automatically.</string>
-    <string name="fix_all_done">Updated %1$d contact(s).</string>
     <string name="dialog_title">Confirm number</string>
     <string name="save">Save</string>
     <string name="cancel">Cancel</string>
