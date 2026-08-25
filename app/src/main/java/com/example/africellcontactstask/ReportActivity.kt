@@ -1,5 +1,6 @@
 package com.example.africellcontactstask
 
+import android.app.Activity
 import android.content.ContentValues
 import android.graphics.Color
 import android.graphics.Paint
@@ -9,12 +10,14 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
+import android.view.View
 import android.widget.Button
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
@@ -24,6 +27,9 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import java.io.File
 import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Second screen shown after a bulk "Apply" finishes writing (see
@@ -84,6 +90,15 @@ class ReportActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.savePdfButton).setOnClickListener { savePdf() }
         findViewById<ImageButton>(R.id.reportBackButton).setOnClickListener { finish() }
+
+        val undoButton = findViewById<Button>(R.id.undoButton)
+        if (rows.isEmpty()) {
+            // Nothing was actually changed this run (e.g. everything skipped/failed) —
+            // there's nothing to undo.
+            undoButton.visibility = View.GONE
+        } else {
+            undoButton.setOnClickListener { confirmUndo() }
+        }
     }
 
     /** One label/value line in the stats block (e.g. "Numbers updated:" … "114"). */
@@ -113,6 +128,75 @@ class ReportActivity : AppCompatActivity() {
     }
 
     private fun themeColor(colorRes: Int): Int = ContextCompat.getColor(this, colorRes)
+
+    /**
+     * Confirms, then restores every row in THIS report to its pre-run number — the same
+     * "last run" UndoManager has saved locally, since this report IS that run. Styled the
+     * same custom way as MainActivity's own confirm dialogs (see its confirmFixSelected()):
+     * this theme renders AlertDialog's default title/message identically otherwise.
+     */
+    private fun confirmUndo() {
+        val density = resources.displayMetrics.density
+        fun dp(value: Int) = (value * density).toInt()
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(20), dp(24), dp(4))
+        }
+        val titleView = TextView(this).apply {
+            text = getString(R.string.undo_confirm_title)
+            setTextColor(ContextCompat.getColor(this@ReportActivity, R.color.white))
+            textSize = 18f
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, 0, 0, dp(10))
+        }
+        container.addView(titleView)
+        val messageView = TextView(this).apply {
+            text = getString(R.string.undo_confirm_message_format, rows.size)
+            setTextColor(ContextCompat.getColor(this@ReportActivity, R.color.white))
+            textSize = 14f
+        }
+        container.addView(messageView)
+
+        AlertDialog.Builder(this)
+            .setView(container)
+            .setPositiveButton(R.string.undo) { _, _ -> performUndo() }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    /**
+     * Writes every row's `oldNumber` back over its `newNumber`, off the main thread — the
+     * exact reverse of what MainActivity.runFixSelected() did. Only touches Contacts
+     * directly; MainActivity's own in-memory list is refreshed separately once we return to
+     * it (see the RESULT_OK below, and MainActivity's reportActivityLauncher).
+     */
+    private fun performUndo() {
+        val undoButton = findViewById<Button>(R.id.undoButton)
+        undoButton.isEnabled = false
+        Thread {
+            var restored = 0
+            for (row in rows) {
+                if (ContactsAccessor.writeNumber(contentResolver, row.contactId, row.oldNumber)) {
+                    restored++
+                }
+            }
+            runOnUiThread {
+                UndoManager.clearLastRun(this)
+                setResult(Activity.RESULT_OK)
+                if (restored == rows.size) {
+                    Toast.makeText(this, getString(R.string.undo_done_format, restored), Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(
+                        this,
+                        getString(R.string.undo_partial_format, restored, rows.size),
+                        Toast.LENGTH_LONG
+                    ).show()
+                    undoButton.isEnabled = true // let them retry for whatever didn't restore
+                }
+            }
+        }.start()
+    }
 
     /**
      * Renders the same report onto one or more PDF pages — paginating the table whenever it
@@ -218,7 +302,8 @@ class ReportActivity : AppCompatActivity() {
 
         document.finishPage(page)
 
-        val fileName = "numbering_plan_report_${System.currentTimeMillis()}.pdf"
+        val date = SimpleDateFormat("MM.dd.yyyy", Locale.US).format(Date())
+        val fileName = "numbering_plan_report_$date.pdf"
         val savedLocation = try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val values = ContentValues().apply {

@@ -40,6 +40,49 @@
             android:textAllCaps="false"
             android:visibility="gone" />
     </LinearLayout>
+
+    <!--  Shown only when there's a saved "last run" available to undo (see UndoManager) —
+             stays visible across app restarts until the next Apply run replaces it or it's
+             undone, so "later I can undo to it" holds even after closing the report screen.  -->
+    <LinearLayout
+        android:id="@+id/undoBannerLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/report_screen_bg"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/undoBannerText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp" />
+
+        <Button
+            android:id="@+id/undoLastUpdateButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/pill_button_outline"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
+            android:stateListAnimator="@null"
+            android:text="@string/undo"
+            android:textAllCaps="false"
+            android:textColor="@color/accent_purple"
+            android:textSize="13sp" />
+    </LinearLayout>
     <!--  Step 3, as three tabs: tapping one filters the list below to just that status.
              Tab labels are updated with live counts in MainActivity.updateSummary(). This
              sits right at the top (replacing the old summary bar) so it's the first thing

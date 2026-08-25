@@ -175,19 +175,45 @@
         </androidx.cardview.widget.CardView>
     </androidx.core.widget.NestedScrollView>
 
-    <Button
-        android:id="@+id/savePdfButton"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_margin="16dp"
-        android:background="@drawable/pill_button_filled"
-        android:insetTop="0dp"
-        android:insetBottom="0dp"
-        android:paddingTop="14dp"
-        android:paddingBottom="14dp"
-        android:stateListAnimator="@null"
-        android:text="@string/save_pdf"
-        android:textAllCaps="false"
-        android:textColor="@color/white"
-        android:textSize="16sp" />
+        android:orientation="horizontal">
+
+        <!--  Restores every row in this report to its number from before this run — see
+                 UndoManager. Hidden when there's nothing to undo (numbersUpdated == 0).  -->
+        <Button
+            android:id="@+id/undoButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:layout_weight="1"
+            android:background="@drawable/pill_button_outline"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:paddingTop="14dp"
+            android:paddingBottom="14dp"
+            android:stateListAnimator="@null"
+            android:text="@string/undo"
+            android:textAllCaps="false"
+            android:textColor="@color/accent_purple"
+            android:textSize="16sp" />
+
+        <Button
+            android:id="@+id/savePdfButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:background="@drawable/pill_button_filled"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:paddingTop="14dp"
+            android:paddingBottom="14dp"
+            android:stateListAnimator="@null"
+            android:text="@string/save_pdf"
+            android:textAllCaps="false"
+            android:textColor="@color/white"
+            android:textSize="16sp" />
+    </LinearLayout>
 </LinearLayout>

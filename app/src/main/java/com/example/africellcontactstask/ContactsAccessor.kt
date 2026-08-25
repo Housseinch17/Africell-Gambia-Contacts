@@ -1,6 +1,7 @@
 package com.example.africellcontactstask
 
 import android.content.ContentResolver
+import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
 import android.database.Cursor
@@ -71,5 +72,34 @@ object ContactsAccessor {
 
         Log.d("MyTag","result: $result")
         return result
+    }
+
+    /**
+     * Writes `newNumber` into an existing contact's Data row — modifying that record in
+     * place, never creating a new one. This is the single write path shared by both
+     * directions of the app: applying a fix (old → suggested) and undoing one (new →
+     * old) are the same operation, just with the two numbers swapped, so both MainActivity
+     * (apply) and ReportActivity/UndoManager (undo) call this instead of each keeping their
+     * own copy of the ContentResolver call.
+     *
+     * @param dataId the Phone._ID of the row to update (Contact.id / UpdatedNumberRow.contactId).
+     */
+    fun writeNumber(contentResolver: ContentResolver, dataId: String, newNumber: String): Boolean {
+        return try {
+            val values = ContentValues().apply {
+                put(ContactsContract.CommonDataKinds.Phone.NUMBER, newNumber)
+            }
+            val rowsUpdated = contentResolver.update(
+                ContactsContract.Data.CONTENT_URI,
+                values,
+                "${ContactsContract.CommonDataKinds.Phone._ID} = ?",
+                arrayOf(dataId)
+            )
+            rowsUpdated > 0
+        } catch (e: SecurityException) {
+            // Shouldn't happen in practice: every call site should only call this after
+            // WRITE_CONTACTS is confirmed granted.
+            false
+        }
     }
 }

@@ -24,7 +24,7 @@
     <string name="fix_selected">Apply</string>
     <string name="fix_selected_format">Apply (%1$d)</string>
     <string name="fix_selected_confirm_title">Apply selected numbers?</string>
-    <string name="fix_selected_confirm_message">This will update every selected contact\'s number to its suggested 9-digit format. This can\'t be undone automatically.</string>
+    <string name="fix_selected_confirm_message">This will update every selected contact\'s number to its suggested 9-digit format. You can undo this afterward if needed.</string>
     <string name="fix_selected_done">Updated %1$d contact(s).</string>
     <string name="fix_selected_none">Select at least one contact first.</string>
 
@@ -63,4 +63,16 @@
     <string name="save_pdf">Save PDF</string>
     <string name="pdf_saved_format">Saved to %1$s</string>
     <string name="pdf_save_failed">Could not save the PDF.</string>
+
+    <!--  Undo: restores the last Apply run's contacts to their pre-run numbers. The run is
+         saved locally (on-device only, see UndoManager) so this stays available after the
+         report screen is closed, or the app is restarted — until the next Apply run replaces
+         it, or it's undone.  -->
+    <string name="undo">Undo</string>
+    <string name="undo_banner_format">Last update changed %1$d number(s).</string>
+    <string name="undo_confirm_title">Undo last update?</string>
+    <string name="undo_confirm_message_format">This will restore %1$d contact(s) to the number they had before the last update.</string>
+    <string name="undoing_update">Restoring original numbers…</string>
+    <string name="undo_done_format">Restored %1$d contact(s).</string>
+    <string name="undo_partial_format">Restored %1$d of %2$d contact(s). The rest couldn\'t be restored.</string>
 </resources>

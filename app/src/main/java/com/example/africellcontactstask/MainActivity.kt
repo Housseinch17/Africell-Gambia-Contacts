@@ -1,13 +1,12 @@
 package com.example.africellcontactstask
 
 import android.Manifest
-import android.content.ContentValues
+import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
-import android.provider.ContactsContract
 import android.provider.Settings
 import android.util.Log
 import android.view.View
@@ -55,6 +54,17 @@ class MainActivity : AppCompatActivity() {
     // together. `pendingWriteAction` holds whatever write was waiting on the permission so
     // it can run immediately once the user grants it, instead of silently failing.
     private var pendingWriteAction: (() -> Unit)? = null
+
+    // Launched instead of a plain startActivity() so ReportActivity can report back that it
+    // performed its own "Undo" — see its performUndo() setting RESULT_OK — at which point
+    // MainActivity's own in-memory contacts (and undo banner) need a refresh too.
+    private val reportActivityLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == Activity.RESULT_OK) {
+                loadContacts()
+            }
+            refreshUndoBannerFromStorage()
+        }
 
     private val writeContactsPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -173,6 +183,8 @@ class MainActivity : AppCompatActivity() {
 
         bindSelectAllCheckbox()
         fixSelectedButton.setOnClickListener { confirmFixSelected() }
+        findViewById<Button>(R.id.undoLastUpdateButton).setOnClickListener { confirmUndoLastRun() }
+        refreshUndoBannerFromStorage()
 
         val recyclerView = findViewById<RecyclerView>(R.id.contactsRecyclerView)
         recyclerView.layoutManager = LinearLayoutManager(this)
@@ -522,20 +534,27 @@ class MainActivity : AppCompatActivity() {
                 if (writeNumberToContact(contact.id, newNumber)) {
                     val operator = contact.carrier ?: "-"
                     applyResolvedNumber(contact, newNumber)
-                    rows.add(UpdatedNumberRow(contact.name, operator, oldNumber, newNumber))
+                    rows.add(UpdatedNumberRow(contact.id, contact.name, operator, oldNumber, newNumber))
                     updated++
                 } else {
                     failed++
                 }
             }
 
+            val generatedAt = SimpleDateFormat("d MMM yyyy, HH:mm", Locale.getDefault()).format(Date())
+
+            // Saved locally (on-device only, see UndoManager) so this run can be undone
+            // later — from the report screen that's about to open, or from the "Undo last
+            // update" banner on this screen even after that report is closed.
+            UndoManager.saveLastRun(this, rows, generatedAt)
+
             runOnUiThread {
                 syncSelectAllCheckboxState()
                 updateSummary()
+                updateUndoBanner(rows) // already in hand — no need to re-read what was just saved
                 setLoading(false)
 
-                val generatedAt = SimpleDateFormat("d MMM yyyy, HH:mm", Locale.getDefault()).format(Date())
-                startActivity(
+                reportActivityLauncher.launch(
                     Intent(this, ReportActivity::class.java).apply {
                         putExtra(ReportActivity.EXTRA_NUMBERS_UPDATED, updated)
                         putExtra(ReportActivity.EXTRA_NUMBERS_SKIPPED, skipped)
@@ -575,24 +594,128 @@ class MainActivity : AppCompatActivity() {
         contact.isEditing = false
     }
 
-    /** Writes the corrected number back to the phone's contact using ContactsContract. */
-    private fun writeNumberToContact(rawContactDataId: String, newNumber: String): Boolean {
-        return try {
-            val values = ContentValues().apply {
-                put(ContactsContract.CommonDataKinds.Phone.NUMBER, newNumber)
-            }
-            val rowsUpdated = contentResolver.update(
-                ContactsContract.Data.CONTENT_URI,
-                values,
-                "${ContactsContract.CommonDataKinds.Phone._ID} = ?",
-                arrayOf(rawContactDataId)
-            )
-            rowsUpdated > 0
-        } catch (e: SecurityException) {
-            // Shouldn't happen in practice: every call site routes through
-            // runWithWriteContactsPermission first, which ensures WRITE_CONTACTS is
-            // granted before this function is ever called.
-            false
+    /** Writes the corrected number back to the phone's contact — see ContactsAccessor.writeNumber(). */
+    private fun writeNumberToContact(rawContactDataId: String, newNumber: String): Boolean =
+        ContactsAccessor.writeNumber(contentResolver, rawContactDataId, newNumber)
+
+    // --- Undo: restores the last Apply run's contacts to their pre-run numbers. The run is
+    // saved locally by UndoManager (see runFixSelected below), so this stays available even
+    // after the report screen is closed or the app is restarted. ---
+
+    /** Shows/hides the undo banner for a known set of rows (null/empty = hide). */
+    private fun updateUndoBanner(rows: List<UpdatedNumberRow>?) {
+        val banner = findViewById<View>(R.id.undoBannerLayout)
+        if (rows.isNullOrEmpty()) {
+            banner.visibility = View.GONE
+        } else {
+            findViewById<TextView>(R.id.undoBannerText).text =
+                getString(R.string.undo_banner_format, rows.size)
+            banner.visibility = View.VISIBLE
         }
+    }
+
+    /**
+     * Cold path: reads whatever UndoManager currently has saved and updates the banner —
+     * used where we don't already know that state in memory (app start, and coming back
+     * from ReportActivity, which may have undone it independently). A saved run can be
+     * sizeable (up to one row per contact fixed, so potentially a few hundred KB of JSON),
+     * so the read + parse happens off the main thread rather than blocking onCreate/etc.
+     */
+    private fun refreshUndoBannerFromStorage() {
+        Thread {
+            val lastRun = UndoManager.loadLastRun(this)
+            runOnUiThread { updateUndoBanner(lastRun) }
+        }.start()
+    }
+
+    /**
+     * "Undo" tapped on the banner: loads the saved run off the main thread (see
+     * refreshUndoBannerFromStorage() for why), then confirms and restores it.
+     */
+    private fun confirmUndoLastRun() {
+        Thread {
+            val lastRun = UndoManager.loadLastRun(this)
+            runOnUiThread {
+                if (lastRun != null) showUndoConfirmDialog(lastRun)
+            }
+        }.start()
+    }
+
+    /** Builds and shows the actual confirm dialog once `lastRun` is in hand. */
+    private fun showUndoConfirmDialog(lastRun: List<UpdatedNumberRow>) {
+        // Same custom-styled dialog as confirmFixSelected() — this theme renders
+        // AlertDialog's default title/message identically otherwise.
+        val density = resources.displayMetrics.density
+        fun dp(value: Int) = (value * density).toInt()
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(20), dp(24), dp(4))
+        }
+        val titleView = TextView(this).apply {
+            text = getString(R.string.undo_confirm_title)
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.white))
+            textSize = 18f
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(0, 0, 0, dp(10))
+        }
+        container.addView(titleView)
+        val messageView = TextView(this).apply {
+            text = getString(R.string.undo_confirm_message_format, lastRun.size)
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.white))
+            textSize = 14f
+        }
+        container.addView(messageView)
+
+        AlertDialog.Builder(this)
+            .setView(container)
+            .setPositiveButton(R.string.undo) { _, _ ->
+                runWithWriteContactsPermission { restoreLastRun(lastRun) }
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    /**
+     * Writes every row's `oldNumber` back over its `newNumber` and, for whichever contacts
+     * are still in `contacts` (should be all of them — this only reverses the immediately
+     * preceding run), updates that Contact object in place too, exactly the way
+     * applyResolvedNumber() does for a normal fix. That keeps the on-screen list correct
+     * immediately, without needing a full re-scan of the device.
+     */
+    private fun restoreLastRun(rows: List<UpdatedNumberRow>) {
+        setLoading(true, getString(R.string.undoing_update))
+        Thread {
+            var restored = 0
+            for (row in rows) {
+                if (ContactsAccessor.writeNumber(contentResolver, row.contactId, row.oldNumber)) {
+                    restored++
+                    contacts.find { it.id == row.contactId }?.let {
+                        applyResolvedNumber(it, row.oldNumber)
+                        // applyResolvedNumber() always leaves `selected = false` (right for a
+                        // normal fix, since the contact usually isn't CHANGEABLE anymore
+                        // afterward) — but undoing puts it back to CHANGEABLE, and a fresh
+                        // scan selects every CHANGEABLE contact by default, so this should too.
+                        it.selected = it.status == ContactStatus.CHANGEABLE
+                    }
+                }
+            }
+            runOnUiThread {
+                UndoManager.clearLastRun(this)
+                syncSelectAllCheckboxState()
+                updateSummary()
+                updateUndoBanner(null) // just cleared it above — no need to re-read
+                setLoading(false)
+                if (restored == rows.size) {
+                    Toast.makeText(this, getString(R.string.undo_done_format, restored), Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(
+                        this,
+                        getString(R.string.undo_partial_format, restored, rows.size),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }.start()
     }
 }
